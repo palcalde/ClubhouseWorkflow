@@ -93,6 +93,8 @@ class Clubhouse
 	end
 
 	def search(query, max_to_find=100)
+		puts "searching stories with query #{query}"
+
 		next_id = nil
 		stories = []
 
@@ -131,7 +133,7 @@ class Clubhouse
 		(today - completed_at).to_i
 	end
 
-	private def stories(allow_search=true, updated_since_days=15)
+	private def stories(allow_search=true, updated_since_days=30)
 		if allow_search
 			@stories ||= @projects.reduce([]) { |acc, id|
 				team_label = @info[:team_label]
