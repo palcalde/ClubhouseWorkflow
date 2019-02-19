@@ -46,7 +46,7 @@ class Clubhouse
 		get_cards_requiring_qa
 	end
 
-	def release(version_number, completed_days_ago = 0, label)
+	def release(version_number, completed_days_ago = 0, label = nil)
 		label ||= "rc #{version_number}"
 
 		get_released_cards(completed_days_ago)	
@@ -55,7 +55,7 @@ class Clubhouse
 		}
 	end
 
-	def production(version_number, completed_days_ago = 0, label)
+	def production(version_number, completed_days_ago = 0, label = nil)
 		label ||= "🚀 #{version_number}"
 
 		get_released_cards(completed_days_ago)		
