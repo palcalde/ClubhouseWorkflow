@@ -46,7 +46,9 @@ class Clubhouse
 		get_cards_requiring_qa
 	end
 
-	def release(version_number, completed_days_ago = 0, label = nil)
+	def release(version_number, build_number, completed_days_ago = 0, label = nil)
+		deliver(build_number)
+
 		label ||= "rc #{version_number}"
 
 		get_released_cards(completed_days_ago)	
