@@ -21,6 +21,7 @@ class Clubhouse
 		@qa_passed_column = @workflow['states'].select { |s| s['name'] == info[:qa_passed_column] }.map { |c| c['id'] }.first
 		@released_column = @workflow['states'].select { |s| s['name'] == info[:released_column] }.map { |c| c['id'] }.first
 		@projects = @clubhouse.projects.list[:content].select { |p| info[:projects].include? p['name']}.map { |p| p['id'] }
+		@projects_names = @clubhouse.projects.list[:content].select { |p| info[:projects].include? p['name']}.map { |p| { p['id'] => p['name'] }}.reduce({}, :merge)
 	end
 
 	def deliver(build_number)
@@ -74,6 +75,22 @@ class Clubhouse
 	def get_released_cards_titles()
 		get_released_cards
 		.map { |s| get_changelog_text_for_story(s) }
+	end
+
+	# 
+	def get_released_cards_titles(version_number)
+		label = "🚀 #{version_number}"
+	
+		stories
+		.select { |s| contains_label(s,label) }
+		.group_by { |s| s['project_id'] }
+		.map { |k, v|  [ @projects_names[k], v.map { |s| get_changelog_text_for_story(s) } ] }
+		.reduce([]){ |acc, item|
+			acc + [item[0]] + item[1]
+		}
+
+		
+			
 	end
 
 	def get_cards_requiring_qa()
