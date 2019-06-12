@@ -87,10 +87,7 @@ class Clubhouse
 		.map { |k, v|  [ @projects_names[k], v.map { |s| get_changelog_text_for_story(s) } ] }
 		.reduce([]){ |acc, item|
 			acc + [item[0]] + item[1]
-		}
-
-		
-			
+		}			
 	end
 
 	def get_cards_requiring_qa()
