@@ -77,10 +77,17 @@ class Clubhouse
 		.map { |s| get_changelog_text_for_story(s) }
 	end
 
-	# 
 	def get_released_cards_titles(version_number)
 		label = "🚀 #{version_number}"
-	
+		get_released_cards_titles(label)	
+	end
+
+	def get_release_candidate_card_titles(version_number)
+		label = "rc #{version_number}"
+		get_released_cards_titles(label)	
+	end
+
+	private def get_released_cards_titles(label)	
 		stories
 		.select { |s| contains_label(s,label) }
 		.group_by { |s| s['project_id'] }
