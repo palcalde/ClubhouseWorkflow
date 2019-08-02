@@ -79,15 +79,15 @@ class Clubhouse
 
 	def get_released_cards_titles(version_number)
 		label = "🚀 #{version_number}"
-		get_released_cards_titles(label)	
+		get_cards_titles_for_label(label)	
 	end
 
 	def get_release_candidate_card_titles(version_number)
 		label = "rc #{version_number}"
-		get_released_cards_titles(label)	
+		get_cards_titles_for_label(label)	
 	end
 
-	private def get_released_cards_titles(label)	
+	private def get_cards_titles_for_label(label)	
 		stories
 		.select { |s| contains_label(s,label) }
 		.group_by { |s| s['project_id'] }
