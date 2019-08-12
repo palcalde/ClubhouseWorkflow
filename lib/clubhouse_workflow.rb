@@ -1,4 +1,5 @@
 require "clubhouse_workflow/version"
+require "parallel"
 
 module ClubhouseWorkflow
   require 'clubhouse_ruby'
@@ -77,24 +78,24 @@ class Clubhouse
 		.map { |s| get_changelog_text_for_story(s) }
 	end
 
-	def get_released_cards_titles(version_number)
+	def get_released_cards_titles_for_version(version_number)
 		label = "🚀 #{version_number}"
-		get_cards_titles_for_label(label)	
+		get_cards_titles_for_label(label)
 	end
 
-	def get_release_candidate_card_titles(version_number)
+	def get_release_candidate_cards_titles(version_number)
 		label = "rc #{version_number}"
-		get_cards_titles_for_label(label)	
+		get_cards_titles_for_label(label)
 	end
 
-	private def get_cards_titles_for_label(label)	
+	private def get_cards_titles_for_label(label)
 		stories
 		.select { |s| contains_label(s,label) }
 		.group_by { |s| s['project_id'] }
 		.map { |k, v|  [ @projects_names[k], v.map { |s| get_changelog_text_for_story(s) } ] }
 		.reduce([]){ |acc, item|
 			acc + [item[0]] + item[1]
-		}			
+		}
 	end
 
 	def get_cards_requiring_qa()
@@ -167,7 +168,9 @@ class Clubhouse
 
 				puts "found #{found_stories.count} stories for project #{id}"
 
-				acc + found_stories.select { |s| found_in_git(s) }
+				found_in_git_stories = Parallel.map(found_stories) { |s| found_in_git(s) == true ? s : nil }.compact
+
+				acc + found_in_git_stories
 			}
 		else
 			@stories ||= @projects.reduce([]) { |acc, id|
