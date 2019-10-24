@@ -1,6 +1,8 @@
 require "clubhouse_workflow/version"
 require "parallel"
 
+require "clubhouse_workflow_driver" #This is only to make the driver workflow reachable through the gem
+
 module ClubhouseWorkflow
 	require 'clubhouse_ruby'
 
@@ -34,6 +36,10 @@ module ClubhouseWorkflow
 					puts "Chore story #{s['id']} found, moving it to Released"     
 					@clubhouse.stories(s['id']).update(workflow_state_id: @released_column)
 					@clubhouse.stories(s['id']).comments.create(text: "Delivered in version #{build_number}")
+				elsif is_no_qa_tagged(s) && !is_released(s)
+					puts("Feature #{s['id']} found, is No-QA, moving it to Released / Done")
+					@clubhouse.stories(s['id']).update(workflow_state_id: @released_column)
+					@clubhouse.stories(s['id']).comments.create(text: "No QA story. Delivered in version #{build_number}")
 				elsif is_before_qa_backlog(s)
 					puts "Feature #{s['id']} found, needs QA, moving it to QA Backlog"     
 					@clubhouse.stories(s['id']).update(workflow_state_id: @qa_column)
@@ -241,6 +247,13 @@ module ClubhouseWorkflow
 		is_blocked = story_labels.include? blocked_label
 
 		is_blocked || is_qa_rejected
+	end
+
+	private def is_no_qa_tagged(s)
+		story_labels = s['labels'].map { |l| l['name'] }
+		no_qa_label = @info[:no_qa_label]
+		
+		story_labels.include? no_qa_label
 	end
 
 	private def is_before_qa_backlog(s)
