@@ -74,6 +74,18 @@ module ClubhouseWorkflow
       }
     end
 
+    def mark_in_progress_cards(version)
+      @stories ||= @projects.reduce([]) { |acc, id|
+        team_label = @info[:team_label]
+
+        updated_since = (Date.today - updated_since_days).strftime
+
+        found_stories = search("project:#{id} updated:#{updated_since}..* label:#{team_label}")
+
+        puts "found #{found_stories.count} stories for project #{id}"
+
+    end
+
     def get_released_cards(completed_days_ago = 0)
       stories_in_git
         .select { |s| !already_in_prod(s) && days_since_completed(s) >= completed_days_ago.to_i }
