@@ -82,16 +82,24 @@ module ClubhouseWorkflow
 		def get_released_cards_titles()
 			get_released_cards
 			.map { |s| get_changelog_text_for_story(s) }
-		end
+		end 
 
 		def get_released_cards_titles_for_version(version_number)
 			label = "🚀 #{version_number}"
 			get_cards_titles_for_label(label)
 		end
 
-		def get_release_candidate_cards_titles(version_number)
+		private def get_epic_name(id)
+			if id.nil?
+				"none"
+			else 
+				@clubhouse.epics(id).list[:content]['name']
+			end
+		end
+
+		def get_release_candidate_card_names_groupby_project(version_number)
 			label = "rc #{version_number}"
-			get_cards_titles_for_label(label)
+			get_cards_names_for_label_filteredby_feature(label)
 		end
 
 		private def get_cards_titles_for_label(label)
@@ -102,6 +110,13 @@ module ClubhouseWorkflow
 			.reduce([]){ |acc, item|
 				acc + [item[0]] + item[1]
 			}
+		end
+
+		private def get_cards_names_for_label_filteredby_feature(label)
+			stories
+			.select { |s| contains_label(s,label) && s['story_type'] == "feature" }
+			.group_by { |s| s['project_id'] }
+			.map { |k, v|  [ @projects_names[k], v.map { |s| "- #{s['name']} | Epic: #{get_epic_name(s['epic_id'])}" } ] }
 		end
 
 		def get_cards_requiring_qa()
@@ -188,90 +203,90 @@ module ClubhouseWorkflow
 			return @stories
 		end
 
-	# Looks if there is any label containing the rocket emoji.
-	# Since we use it to tag releases, it means it was already deployed to prod
-	private def already_in_prod(s) 
-		already_in_prod = !(s["labels"].find { |l| l["name"].include? "🚀" } || []).empty?
-		already_in_prod
-	end
-
-	private def found_in_git(s)
-		found = `git log --grep="#{s['id']}"`.length > 0
-		found
-	end
-
-	private def get_changelog_text_for_story(s)
-		title = "##{s['id']} - #{s['name']} (#{s['app_url']})"
-		qa_rejected_label = @info[:qa_rejected_label]
-		blocked_label = @info[:blocked_label]
-		title = [qa_rejected_label, blocked_label].reduce(title) { |acc, l|
-			contains_label(s, l) ? "#{l} " + acc : acc 
-		}
-		
-		return title
-	end
-
-	private def is_archived(s)
-		s['archived'] == true
-	end
-
-	private def add_label(s, l) 
-		if !contains_label(s, l)
-			puts "Adding label #{l} to story #{s['id']}"
-			labels = s["labels"].map { |l| { name: l["name"] } }
-			labels.push({ name: l })
-			@clubhouse.stories(s['id']).update(labels: labels)
+		# Looks if there is any label containing the rocket emoji.
+		# Since we use it to tag releases, it means it was already deployed to prod
+		private def already_in_prod(s) 
+			already_in_prod = !(s["labels"].find { |l| l["name"].include? "🚀" } || []).empty?
+			already_in_prod
 		end
+
+		private def found_in_git(s)
+			found = `git log --grep="#{s['id']}"`.length > 0
+			found
+		end
+
+		private def get_changelog_text_for_story(s)
+			title = "##{s['id']} - #{s['name']} (#{s['app_url']})"
+			qa_rejected_label = @info[:qa_rejected_label]
+			blocked_label = @info[:blocked_label]
+			title = [qa_rejected_label, blocked_label].reduce(title) { |acc, l|
+				contains_label(s, l) ? "#{l} " + acc : acc 
+			}
+			
+			return title
+		end
+
+		private def is_archived(s)
+			s['archived'] == true
+		end
+
+		private def add_label(s, l) 
+			if !contains_label(s, l)
+				puts "Adding label #{l} to story #{s['id']}"
+				labels = s["labels"].map { |l| { name: l["name"] } }
+				labels.push({ name: l })
+				@clubhouse.stories(s['id']).update(labels: labels)
+			end
+		end
+
+		private def contains_label(s, l) 
+			story_labels = s['labels'].map { |l| l['name'] }
+			contains_label = story_labels.include? l
+
+			contains_label
+		end
+
+		private def belongs_to_team(s) 
+			story_labels = s['labels'].map { |l| l['name'] }
+			team_label = @info[:team_label]
+			belongs_to_team = story_labels.include? team_label
+
+			belongs_to_team
+		end
+
+		private def is_blocked(s)
+			story_labels = s['labels'].map { |l| l['name'] }
+			qa_rejected_label = @info[:qa_rejected_label]
+			blocked_label = @info[:blocked_label]
+			is_qa_rejected = story_labels.include? qa_rejected_label
+			is_blocked = story_labels.include? blocked_label
+
+			is_blocked || is_qa_rejected
+		end
+
+		private def is_no_qa_tagged(s)
+			story_labels = s['labels'].map { |l| l['name'] }
+			no_qa_label = @info[:no_qa_label]
+			
+			story_labels.include? no_qa_label
+		end
+
+		private def is_before_qa_backlog(s)
+			@dev_columns.include? s['workflow_state_id']
+		end
+
+		private def requires_qa(s)
+			requires_qa_column = @dev_columns + [@qa_column]
+			requires_qa_column.include? s['workflow_state_id']
+		end
+
+		def is_qa_passed(s)
+			@qa_passed_column == s['workflow_state_id']
+		end
+
+		def is_released(s)
+			@released_column == s['workflow_state_id']
+		end
+
 	end
-
-	private def contains_label(s, l) 
-		story_labels = s['labels'].map { |l| l['name'] }
-		contains_label = story_labels.include? l
-
-		contains_label
-	end
-
-	private def belongs_to_team(s) 
-		story_labels = s['labels'].map { |l| l['name'] }
-		team_label = @info[:team_label]
-		belongs_to_team = story_labels.include? team_label
-
-		belongs_to_team
-	end
-
-	private def is_blocked(s)
-		story_labels = s['labels'].map { |l| l['name'] }
-		qa_rejected_label = @info[:qa_rejected_label]
-		blocked_label = @info[:blocked_label]
-		is_qa_rejected = story_labels.include? qa_rejected_label
-		is_blocked = story_labels.include? blocked_label
-
-		is_blocked || is_qa_rejected
-	end
-
-	private def is_no_qa_tagged(s)
-		story_labels = s['labels'].map { |l| l['name'] }
-		no_qa_label = @info[:no_qa_label]
-		
-		story_labels.include? no_qa_label
-	end
-
-	private def is_before_qa_backlog(s)
-		@dev_columns.include? s['workflow_state_id']
-	end
-
-	private def requires_qa(s)
-		requires_qa_column = @dev_columns + [@qa_column]
-		requires_qa_column.include? s['workflow_state_id']
-	end
-
-	def is_qa_passed(s)
-		@qa_passed_column == s['workflow_state_id']
-	end
-
-	def is_released(s)
-		@released_column == s['workflow_state_id']
-	end
-
-end
 end
