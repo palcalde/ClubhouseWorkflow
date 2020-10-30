@@ -99,7 +99,7 @@ module ClubhouseWorkflow
 
 		def get_release_candidate_card_names_groupby_project(version_number)
 			label = "rc #{version_number}"
-			get_cards_names_for_label_filteredby_feature(label)
+			get_cards_names_filteredby_type_and_label("feature", label)
 		end
 
 		private def get_cards_titles_for_label(label)
@@ -112,9 +112,10 @@ module ClubhouseWorkflow
 			}
 		end
 
-		private def get_cards_names_for_label_filteredby_feature(label)
+		private def get_cards_names_filteredby_type_and_label(story_type, label)
 			stories
-			.select { |s| contains_label(s,label) && s['story_type'] == "feature" }
+			.select { |s| contains_label(s,label) }
+			.select { |s| story_type ? (s['story_type'] == story_type) : true }
 			.group_by { |s| s['project_id'] }
 			.map { |k, v|  [ @projects_names[k], v.map { |s| "- #{s['name']} | Epic: #{get_epic_name(s['epic_id'])}" } ] }
 		end
