@@ -134,7 +134,7 @@ module ClubhouseWorkflow
 			stories = stories.map { |s|
 				qa_rejected_label = @info[:qa_rejected_label]
 				blocked_label = @info[:blocked_label]
-				msg = "<#{s['app_url']}|#{s['name']}>"
+				msg = "<#{s['app_url']}|#{sanitizeCharacters(s['name'])}>"
 			}.join(", ")
 		end
 
@@ -288,6 +288,10 @@ module ClubhouseWorkflow
 		def is_released(s)
 			@released_column == s['workflow_state_id']
 		end
+
+		def sanitizeCharacters(text)
+           		text.gsub("\"", "")
+        	end
 
 	end
 end
