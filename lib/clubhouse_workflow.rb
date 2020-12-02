@@ -290,8 +290,8 @@ module ClubhouseWorkflow
 		end
 
 		def sanitizeCharacters(text)
-           text.gsub("\"", "")
-        end
+           		text.gsub("\"", "")
+        	end
 
 	end
 end
