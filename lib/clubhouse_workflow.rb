@@ -12,6 +12,7 @@ module ClubhouseWorkflow
 			@clubhouse = ClubhouseRuby::Clubhouse.new(info[:token])
 
 			workflow_list = @clubhouse.workflows.list[:content]
+
 			@workflow = workflow_list.select { |w| w['id'] == info[:workflow_id] }.first
 
 			if !@workflow
@@ -20,56 +21,57 @@ module ClubhouseWorkflow
 			end
 
 			@dev_columns = @workflow['states'].select { |s| info[:dev_columns].include? s['name'] }.map { |c| c['id'] }
-			@qa_column = @workflow['states'].select { |s| s['name'] == info[:qa_column] }.map { |c| c['id'] }.first
-			@qa_passed_column = @workflow['states'].select { |s| s['name'] == info[:qa_passed_column] }.map { |c| c['id'] }.first
+
+			@production_ready_column = @workflow['states'].select { |s| s['name'] == info[:production_ready_column] }.map { |c| c['id'] }.first
+			@production_ready_column_name = info[:production_ready_column]
+
 			@released_column = @workflow['states'].select { |s| s['name'] == info[:released_column] }.map { |c| c['id'] }.first
+			@released_column_name = info[:released_column]
+
 			@projects = @clubhouse.projects.list[:content].select { |p| info[:projects].include? p['name']}.map { |p| p['id'] }
 			@projects_names = @clubhouse.projects.list[:content].select { |p| info[:projects].include? p['name']}.map { |p| { p['id'] => p['name'] }}.reduce({}, :merge)
 		end
 
-		def deliver(build_number)
+		def move_to_production_ready_if_needed(build_number)
 			stories.select { |s|
-				!is_blocked(s) && !is_released(s)
+				is_backlog(s) && !is_blocked(s) && !is_released(s)
 			}
 			.each { |s|
-				if s['story_type'] == "chore" && !is_released(s)
-					puts "Chore story #{s['id']} found, moving it to Released"     
-					@clubhouse.stories(s['id']).update(workflow_state_id: @released_column)
-					@clubhouse.stories(s['id']).comments.create(text: "Delivered in version #{build_number}")
-				elsif is_no_qa_tagged(s) && !is_released(s)
-					puts("Feature #{s['id']} found, is No-QA, moving it to Released / Done")
-					@clubhouse.stories(s['id']).update(workflow_state_id: @released_column)
-					@clubhouse.stories(s['id']).comments.create(text: "No QA story. Delivered in version #{build_number}")
-				elsif is_before_qa_backlog(s)
-					puts "Feature #{s['id']} found, needs QA, moving it to QA Backlog"     
-					@clubhouse.stories(s['id']).update(workflow_state_id: @qa_column)
-					@clubhouse.stories(s['id']).comments.create(text: "Delivered in version #{build_number}")
-				elsif is_qa_passed(s)
-					puts("Feature #{s['id']} found, is QA approved, moving it to Released / Done")
-					@clubhouse.stories(s['id']).update(workflow_state_id: @released_column)
-					@clubhouse.stories(s['id']).comments.create(text: "QA approved. Moving it to Released.")
-				end
+			  puts "Feature `#{s['name']} (#{s['id']})` found, moving it to `#{@production_ready_column_name}`"
+				@clubhouse.stories(s['id']).update(workflow_state_id: @production_ready_column)
+				@clubhouse.stories(s['id']).comments.create(text: "Delivered in version #{build_number}. Moving it to `#{@production_ready_column_name}`.")
 			}
+		end
 
-			get_cards_requiring_qa
+		def move_to_released_if_needed(build_number)
+			stories.select { |s|
+				(is_backlog(s) || is_production_ready(s)) && !is_blocked(s) && !is_released(s)
+			}
+			.each { |s|
+				puts "Feature `#{s['name']} (#{s['id']})` found, moving it to `#{@released_column_name}`"
+				@clubhouse.stories(s['id']).update(workflow_state_id: @released_column)
+				@clubhouse.stories(s['id']).comments.create(text: "Delivered in version #{build_number}. Moving it to `#{@released_column_name}`.")
+			}
 		end
 
 		def release(version_number, build_number, completed_days_ago = 0, label = nil)
-			deliver(build_number)
+			move_to_production_ready_if_needed(build_number)
 
 			label ||= "rc #{version_number}"
 
-			get_released_cards(completed_days_ago)	
+			get_released_cards(completed_days_ago)
 			.each { |s|
 				add_label(s, "rc #{version_number}")
 			}
 		end
 
 		def production(version_number, completed_days_ago = 0, label = nil)
+			move_to_released_if_needed(version_number)
+
 			label ||= "🚀 #{version_number}"
 
-			get_released_cards(completed_days_ago)		
-			.each { |s|	
+			get_released_cards(completed_days_ago)
+			.each { |s|
 				add_label(s, label)
 			}
 		end
@@ -82,7 +84,7 @@ module ClubhouseWorkflow
 		def get_released_cards_titles()
 			get_released_cards
 			.map { |s| get_changelog_text_for_story(s) }
-		end 
+		end
 
 		def get_released_cards_titles_for_version(version_number)
 			label = "🚀 #{version_number}"
@@ -92,7 +94,7 @@ module ClubhouseWorkflow
 		private def get_epic_name(id)
 			if id.nil?
 				"none"
-			else 
+			else
 				@clubhouse.epics(id).list[:content]['name']
 			end
 		end
@@ -120,19 +122,8 @@ module ClubhouseWorkflow
 			.map { |k, v|  [ @projects_names[k], v.map { |s| "- #{s['name']} | Epic: #{get_epic_name(s['epic_id'])}" } ] }
 		end
 
-		def get_cards_requiring_qa()
-			stories
-			.select { |s| requires_qa(s) }
-		end
-
-		def get_cards_requiring_qa_titles()
-			get_cards_requiring_qa
-			.map { |s| get_changelog_text_for_story(s) }
-		end
-
 		def get_slack_changelog_for_stories(stories)
 			stories = stories.map { |s|
-				qa_rejected_label = @info[:qa_rejected_label]
 				blocked_label = @info[:blocked_label]
 				msg = "<#{s['app_url']}|#{sanitizeCharacters(s['name'])}>"
 			}.join(", ")
@@ -158,7 +149,7 @@ module ClubhouseWorkflow
 
 				next_url = response[:content]["next"]
 				next_id = next_url ? next_url.match(/next=(.*)/)[1] : nil
-				total_found = response[:content]["total"] 
+				total_found = response[:content]["total"]
 				stories += response[:content]["data"]
 				stories_left = max_to_find >= total_found
 
@@ -192,6 +183,8 @@ module ClubhouseWorkflow
 
 					found_in_git_stories = Parallel.map(found_stories) { |s| found_in_git(s) == true ? s : nil }.compact
 
+					puts "found #{found_in_git_stories.count} git stories for project #{id}"
+
 					acc + found_in_git_stories
 				}
 			else
@@ -206,7 +199,7 @@ module ClubhouseWorkflow
 
 		# Looks if there is any label containing the rocket emoji.
 		# Since we use it to tag releases, it means it was already deployed to prod
-		private def already_in_prod(s) 
+		private def already_in_prod(s)
 			already_in_prod = !(s["labels"].find { |l| l["name"].include? "🚀" } || []).empty?
 			already_in_prod
 		end
@@ -218,12 +211,9 @@ module ClubhouseWorkflow
 
 		private def get_changelog_text_for_story(s)
 			title = "##{s['id']} - #{s['name']} (#{s['app_url']})"
-			qa_rejected_label = @info[:qa_rejected_label]
 			blocked_label = @info[:blocked_label]
-			title = [qa_rejected_label, blocked_label].reduce(title) { |acc, l|
-				contains_label(s, l) ? "#{l} " + acc : acc 
-			}
-			
+			title = contains_label(s, blocked_label) ? "#{blocked_label} " + title : title
+
 			return title
 		end
 
@@ -231,7 +221,7 @@ module ClubhouseWorkflow
 			s['archived'] == true
 		end
 
-		private def add_label(s, l) 
+		private def add_label(s, l)
 			if !contains_label(s, l)
 				puts "Adding label #{l} to story #{s['id']}"
 				labels = s["labels"].map { |l| { name: l["name"] } }
@@ -240,14 +230,14 @@ module ClubhouseWorkflow
 			end
 		end
 
-		private def contains_label(s, l) 
+		private def contains_label(s, l)
 			story_labels = s['labels'].map { |l| l['name'] }
 			contains_label = story_labels.include? l
 
 			contains_label
 		end
 
-		private def belongs_to_team(s) 
+		private def belongs_to_team(s)
 			story_labels = s['labels'].map { |l| l['name'] }
 			team_label = @info[:team_label]
 			belongs_to_team = story_labels.include? team_label
@@ -257,41 +247,27 @@ module ClubhouseWorkflow
 
 		private def is_blocked(s)
 			story_labels = s['labels'].map { |l| l['name'] }
-			qa_rejected_label = @info[:qa_rejected_label]
 			blocked_label = @info[:blocked_label]
-			is_qa_rejected = story_labels.include? qa_rejected_label
 			is_blocked = story_labels.include? blocked_label
 
-			is_blocked || is_qa_rejected
+			is_blocked
 		end
 
-		private def is_no_qa_tagged(s)
-			story_labels = s['labels'].map { |l| l['name'] }
-			no_qa_label = @info[:no_qa_label]
-			
-			story_labels.include? no_qa_label
-		end
-
-		private def is_before_qa_backlog(s)
+		private def is_backlog(s)
 			@dev_columns.include? s['workflow_state_id']
 		end
 
-		private def requires_qa(s)
-			requires_qa_column = @dev_columns + [@qa_column]
-			requires_qa_column.include? s['workflow_state_id']
+		private def is_production_ready(s)
+			@production_ready_column == s['workflow_state_id']
 		end
 
-		def is_qa_passed(s)
-			@qa_passed_column == s['workflow_state_id']
-		end
-
-		def is_released(s)
+		private def is_released(s)
 			@released_column == s['workflow_state_id']
 		end
 
-		def sanitizeCharacters(text)
-           		text.gsub("\"", "")
-        	end
+		private def sanitizeCharacters(text)
+      text.gsub("\"", "")
+  	end
 
 	end
 end
